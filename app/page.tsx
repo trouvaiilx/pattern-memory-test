@@ -5,6 +5,7 @@ import {
   X,
   RotateCcw,
   Download,
+  Upload,
   AlertCircle,
   Activity,
 } from "lucide-react";
@@ -27,7 +28,9 @@ const PatternTester = () => {
   const [stats, setStats] = useState({ tested: 0, invalid: 0 });
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
   const dotsRef = useRef<(HTMLDivElement | null)[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [touchPos, setTouchPos] = useState<{ x: number; y: number } | null>(
     null
   );
@@ -236,6 +239,45 @@ const PatternTester = () => {
     a.href = url;
     a.download = `pattern-memory-${Date.now()}.json`;
     a.click();
+  };
+
+  // Import patterns
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (json.invalidPatterns && Array.isArray(json.invalidPatterns)) {
+          const newSet = new Set([...invalidPatterns, ...json.invalidPatterns]);
+          setInvalidPatterns(newSet);
+
+          // Update stats to match or exceed imported
+          // If we have stats in json, we can try to merge, but simplistic approach:
+          // new invalid count = set size.
+          // tested count = max(current, imported) + new - invalid
+          // Actually simplest is: tested = newSet.size + (stats.tested - stats.invalid).
+          // But valid patterns aren't tracked!
+          // Let's just trust valid count if merging?
+          // If pure restore:
+          setStats({
+            tested: Math.max(stats.tested, json.stats?.tested || newSet.size),
+            invalid: newSet.size,
+          });
+
+          alert(
+            `Successfully imported ${json.invalidPatterns.length} patterns.`
+          );
+        }
+      } catch (err) {
+        alert("Failed to parse import file");
+      }
+      // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    };
+    reader.readAsText(file);
   };
 
   // Draw canvas lines
@@ -471,7 +513,23 @@ const PatternTester = () => {
           )}
 
           {/* Controls */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImport}
+              accept=".json"
+              className="hidden"
+            />
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              className="bg-gray-200 hover:bg-gray-300 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
+            >
+              <Download size={18} /> Import
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -480,7 +538,7 @@ const PatternTester = () => {
               disabled={invalidPatterns.size === 0}
               className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
             >
-              <Download size={18} /> Export
+              <Upload size={18} /> Export
             </button>
             <button
               onClick={(e) => {
