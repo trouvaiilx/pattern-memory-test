@@ -109,15 +109,16 @@ const PatternTester = () => {
       const centerY = rect.top + rect.height / 2;
       const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
 
-      if (distance < rect.width / 2 + 20) return i;
+      // Increased tolerance for smaller dots (was 20)
+      if (distance < 40) return i;
     }
     return null;
   };
 
   // Handle pattern start
-  const handleStart = (e: React.TouchEvent | React.MouseEvent) => {
-    const touch = "touches" in e ? e.touches[0] : e;
-    const dotIndex = getDotFromPosition(touch.clientX, touch.clientY);
+  const handleStart = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const dotIndex = getDotFromPosition(e.clientX, e.clientY);
 
     if (dotIndex !== null) {
       // Allow reinput even when awaiting validation
@@ -125,17 +126,20 @@ const PatternTester = () => {
       setCurrentPattern([dotIndex]);
       setValidationResult(null);
       setAwaitingValidation(false);
+
+      // Capture pointer for global dragging
+      e.currentTarget.setPointerCapture(e.pointerId);
     }
   };
 
   // Handle pattern drawing
-  const handleMove = (e: React.TouchEvent | React.MouseEvent) => {
+  const handleMove = (e: React.PointerEvent) => {
+    e.preventDefault();
     if (!isDrawing) return;
 
-    const touch = "touches" in e ? e.touches[0] : e;
-    setTouchPos({ x: touch.clientX, y: touch.clientY });
+    setTouchPos({ x: e.clientX, y: e.clientY });
 
-    const dotIndex = getDotFromPosition(touch.clientX, touch.clientY);
+    const dotIndex = getDotFromPosition(e.clientX, e.clientY);
     if (dotIndex !== null && !currentPattern.includes(dotIndex)) {
       setCurrentPattern(addDotToPattern(dotIndex));
 
@@ -204,6 +208,16 @@ const PatternTester = () => {
       setCurrentPattern([]);
       setAwaitingValidation(false);
       setValidationResult(null);
+    }
+  };
+
+  // Handle clicking empty space to dismiss
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    // Only dismiss if we have a pattern or result
+    if (currentPattern.length > 0 || validationResult) {
+      setCurrentPattern([]);
+      setValidationResult(null);
+      setAwaitingValidation(false);
     }
   };
 
@@ -282,184 +296,210 @@ const PatternTester = () => {
   const remaining = TOTAL_PATTERNS - invalidPatterns.size;
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 p-4">
-      <div className="max-w-md mx-auto">
-        {/* Header */}
-        <div className="text-center mb-6">
-          <h1 className="text-3xl font-bold mb-2">Pattern Memory Test</h1>
-          <p className="text-gray-600 text-sm">
-            Test patterns systematically to find your forgotten lock
-          </p>
+    <div
+      className="h-screen bg-white text-gray-900 p-4 flex flex-col"
+      onClick={handleBackgroundClick}
+    >
+      <div className="w-full max-w-md mx-auto flex flex-col h-full">
+        {/* Top Section: Header & Stats - Stable Height */}
+        <div className="flex-none">
+          {/* Header */}
+          <div className="text-center mb-6">
+            <h1 className="text-3xl font-bold mb-2">Pattern Memory Test</h1>
+            <p className="text-gray-600 text-sm">
+              Test patterns systematically to find your forgotten lock
+            </p>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.tested}
+              </div>
+              <div className="text-xs text-gray-600">Tested</div>
+            </div>
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-gray-900">
+                {stats.invalid}
+              </div>
+              <div className="text-xs text-gray-600">Invalid</div>
+            </div>
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
+              <div className="text-2xl font-bold text-gray-900">
+                {remaining.toLocaleString()}
+              </div>
+              <div className="text-xs text-gray-600">Remaining</div>
+            </div>
+          </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-gray-900">
-              {stats.tested}
-            </div>
-            <div className="text-xs text-gray-600">Tested</div>
-          </div>
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-gray-900">
-              {stats.invalid}
-            </div>
-            <div className="text-xs text-gray-600">Invalid</div>
-          </div>
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-3 text-center">
-            <div className="text-2xl font-bold text-gray-900">
-              {remaining.toLocaleString()}
-            </div>
-            <div className="text-xs text-gray-600">Remaining</div>
-          </div>
-        </div>
+        {/* Middle Section: Grid - Flex Grow to take available space */}
+        <div className="flex-grow flex flex-col justify-center items-center min-h-0">
+          <div className="relative touch-none select-none py-8">
+            <canvas
+              ref={canvasRef}
+              className="absolute inset-0 w-full h-full pointer-events-none"
+              style={{ touchAction: "none" }}
+            />
 
-        {/* Pattern Grid */}
-        <div className="relative bg-gray-50 border-2 border-gray-300 rounded-2xl p-8 mb-6 touch-none select-none">
-          <canvas
-            ref={canvasRef}
-            className="absolute inset-0 w-full h-full pointer-events-none"
-            style={{ touchAction: "none" }}
-          />
-
-          <div
-            className="grid grid-cols-3 gap-12 relative z-10"
-            onTouchStart={handleStart}
-            onTouchMove={handleMove}
-            onTouchEnd={handleEnd}
-            onMouseDown={handleStart}
-            onMouseMove={handleMove}
-            onMouseUp={handleEnd}
-            onMouseLeave={handleEnd}
-          >
-            {[...Array(9)].map((_, i) => (
-              <div
-                key={i}
-                ref={(el) => {
-                  dotsRef.current[i] = el;
-                }}
-                className={`w-16 h-16 rounded-full transition-all duration-200 border-2 ${
-                  currentPattern.includes(i)
-                    ? validationResult === "invalid"
-                      ? "bg-red-500 border-red-600 scale-110"
-                      : validationResult === "valid"
-                      ? "bg-green-500 border-green-600 scale-110"
-                      : validationResult === "duplicate"
-                      ? "bg-yellow-500 border-yellow-600 scale-110"
-                      : "bg-gray-900 border-gray-900 scale-110"
-                    : "bg-white border-gray-400 scale-100"
-                }`}
-              >
-                {currentPattern.includes(i) && (
+            <div
+              className="grid grid-cols-3 gap-8 md:gap-12 relative z-10"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => {
+                e.preventDefault(); // Stop default touch actions
+                e.stopPropagation(); // Prevent dismissing when starting to draw
+                handleStart(e);
+              }}
+              onPointerMove={handleMove}
+              onPointerUp={handleEnd}
+              onPointerLeave={handleEnd}
+            >
+              {[...Array(9)].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-center w-16 h-16"
+                >
                   <div
-                    className={`w-full h-full flex items-center justify-center text-sm font-bold ${
-                      validationResult ? "text-white" : "text-white"
+                    ref={(el) => {
+                      dotsRef.current[i] = el;
+                    }}
+                    className={`w-3 h-3 rounded-full transition-all duration-200 border-2 ${
+                      currentPattern.includes(i)
+                        ? validationResult === "invalid"
+                          ? "bg-red-500 border-red-600 scale-150"
+                          : validationResult === "valid"
+                          ? "bg-green-500 border-green-600 scale-150"
+                          : validationResult === "duplicate"
+                          ? "bg-yellow-500 border-yellow-600 scale-150"
+                          : "bg-gray-900 border-gray-900 scale-150"
+                        : "bg-white border-gray-400 scale-100"
                     }`}
-                  >
-                    {currentPattern.indexOf(i) + 1}
-                  </div>
-                )}
-              </div>
-            ))}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {/* Status Messages */}
-        {validationResult === "duplicate" && (
-          <div className="bg-yellow-50 border border-yellow-400 rounded-lg p-4 mb-4 flex items-center gap-3">
-            <AlertCircle className="text-yellow-600" size={24} />
-            <div>
-              <div className="font-semibold text-gray-900">Already Tested</div>
-              <div className="text-sm text-gray-700">
-                You've marked this pattern as incorrect before
+        {/* Bottom Section: Controls & Feedback - Fixed Min Height */}
+        <div
+          className="flex-none h-[260px] flex flex-col justify-end pb-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Status Messages */}
+          {validationResult === "duplicate" && (
+            <div className="bg-yellow-50 border border-yellow-400 rounded-lg p-4 mb-4 flex items-center gap-3">
+              <AlertCircle className="text-yellow-600" size={24} />
+              <div>
+                <div className="font-semibold text-gray-900">
+                  Already Tested
+                </div>
+                <div className="text-sm text-gray-700">
+                  You've marked this pattern as incorrect before
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {validationResult === "valid" && (
-          <div className="bg-green-50 border border-green-500 rounded-lg p-4 mb-4 flex items-center gap-3">
-            <Check className="text-green-600" size={24} />
-            <div>
-              <div className="font-semibold text-gray-900">Pattern Found!</div>
-              <div className="text-sm text-gray-700">
-                This is your correct pattern
+          {validationResult === "valid" && (
+            <div className="bg-green-50 border border-green-500 rounded-lg p-4 mb-4 flex items-center gap-3">
+              <Check className="text-green-600" size={24} />
+              <div>
+                <div className="font-semibold text-gray-900">
+                  Pattern Found!
+                </div>
+                <div className="text-sm text-gray-700">
+                  This is your correct pattern
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {validationResult === "invalid" && (
-          <div className="bg-red-50 border border-red-500 rounded-lg p-4 mb-4 flex items-center gap-3">
-            <X className="text-red-600" size={24} />
-            <div>
-              <div className="font-semibold text-gray-900">
-                Pattern Marked Invalid
+          {validationResult === "invalid" && (
+            <div className="bg-red-50 border border-red-500 rounded-lg p-4 mb-4 flex items-center gap-3">
+              <X className="text-red-600" size={24} />
+              <div>
+                <div className="font-semibold text-gray-900">
+                  Pattern Marked Invalid
+                </div>
+                <div className="text-sm text-gray-700">
+                  This pattern won't be suggested again
+                </div>
               </div>
-              <div className="text-sm text-gray-700">
-                This pattern won't be suggested again
+            </div>
+          )}
+
+          {/* Validation Buttons */}
+          {awaitingValidation && (
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-6 mb-4">
+              <div className="text-center mb-4 font-semibold text-gray-900">
+                Is this your correct pattern?
+              </div>
+              <div className="text-center mb-4 text-sm text-gray-600">
+                Hold any dot to draw again
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    markInvalid();
+                  }}
+                  className="bg-red-600 hover:bg-red-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-white"
+                >
+                  <X size={20} /> No
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    markValid();
+                  }}
+                  className="bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-white"
+                >
+                  <Check size={20} /> Yes
+                </button>
               </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Validation Buttons */}
-        {awaitingValidation && (
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-6 mb-4">
-            <div className="text-center mb-4 font-semibold text-gray-900">
-              Is this your correct pattern?
+          {/* Instructions */}
+          {!awaitingValidation && currentPattern.length === 0 && (
+            <div className="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-4 text-sm text-gray-700">
+              <Activity className="inline mr-2 text-gray-900" size={16} />
+              Draw a pattern by connecting at least 4 dots. Release to test.
             </div>
-            <div className="text-center mb-4 text-sm text-gray-600">
-              Hold any dot to draw again
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={markInvalid}
-                className="bg-red-600 hover:bg-red-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-white"
-              >
-                <X size={20} /> No
-              </button>
-              <button
-                onClick={markValid}
-                className="bg-green-600 hover:bg-green-700 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-white"
-              >
-                <Check size={20} /> Yes
-              </button>
-            </div>
+          )}
+
+          {/* Controls */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                exportData();
+              }}
+              disabled={invalidPatterns.size === 0}
+              className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
+            >
+              <Download size={18} /> Export
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                resetAll();
+              }}
+              disabled={invalidPatterns.size === 0}
+              className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
+            >
+              <RotateCcw size={18} /> Reset
+            </button>
           </div>
-        )}
 
-        {/* Instructions */}
-        {!awaitingValidation && currentPattern.length === 0 && (
-          <div className="bg-gray-100 border border-gray-300 rounded-lg p-4 mb-4 text-sm text-gray-700">
-            <Activity className="inline mr-2 text-gray-900" size={16} />
-            Draw a pattern by connecting at least 4 dots. Release to test.
+          {/* Privacy Notice */}
+          <div className="mt-6 text-center text-xs text-gray-500">
+            All patterns are stored locally on your device only.
+            <br />
+            No data is ever uploaded or shared.
           </div>
-        )}
-
-        {/* Controls */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={exportData}
-            disabled={invalidPatterns.size === 0}
-            className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
-          >
-            <Download size={18} /> Export
-          </button>
-          <button
-            onClick={resetAll}
-            disabled={invalidPatterns.size === 0}
-            className="bg-gray-200 hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-300 py-3 rounded-lg font-semibold flex items-center justify-center gap-2 transition text-gray-900"
-          >
-            <RotateCcw size={18} /> Reset
-          </button>
-        </div>
-
-        {/* Privacy Notice */}
-        <div className="mt-6 text-center text-xs text-gray-500">
-          🔒 All patterns are stored locally on your device only.
-          <br />
-          No data is ever uploaded or shared.
         </div>
       </div>
     </div>
